@@ -5,9 +5,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.6
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: chme5137
 #     language: python
 #     name: python3
 # ---
@@ -106,11 +106,29 @@ plt.show()
 # %%
 def cA_model(times, kf, kr):
     """C_A (mol/L) at each of `times` (s), for rate constants kf and kr (1/s)."""
-    
 
+    def dC_dt(t, y):
+        Ca = y[0]
+        Cb = cA0 - Ca
+        dCa_dt = kr * Cb - kf * Ca
+        return [dCa_dt]
+
+    sol = scipy.integrate.solve_ivp(dC_dt, t_span = (0, times[-1]), y0 = [cA0], t_eval = times)
+    if not sol.success:
+        raise RuntimeError(sol.message)
+
+    return sol.y[0]
+
+kf_guess = 0.05
+kr_guess = 0.02
+
+ca_eq = cA0 * (kr_guess / (kf_guess + kr_guess))
+ca_exact = ca_eq + (cA0 - ca_eq) * np.exp(-(kf_guess + kr_guess) * times)
+
+ca_sim = cA_model(times, kf_guess, kr_guess)
+np.testing.assert_allclose(ca_sim, ca_exact, rtol=1e-3, atol=1e-4)
 
 # your test here
-
 
 # %% [markdown]
 # **(b) Fit it at 298.15 K**, with `scipy.optimize.curve_fit`. **Try it without `p0` first.**
@@ -120,8 +138,21 @@ def cA_model(times, kf, kr):
 # from the data. Roughly how long does $C_A$ take to get halfway to where it ends up?
 
 # %%
+# Without p0
+
+try:
+    popt_1, pcov_1 = scipy.optimize.curve_fit(cA_model, times, cA_data[298.15])
+    print("popt without p0:", popt_1)
+except Exception as e:
+    print("Error without p0:", e)
 
 # %%
+p0_guess = [0.015, 0.02]
+popt, pcov = scipy.optimize.curve_fit(cA_model, times, cA_data[298.15], p0=p0_guess)
+perr = np.sqrt(np.diag(pcov))
+
+print(f"kf = {popt[0]:.5f} ± {perr[0]:.5f} 1/s")
+print(f"kr = {popt[1]:.5f} ± {perr[1]:.5f} 1/s")
 
 # %% [markdown]
 # **(c) Look at it.** Plot the data and the fitted curve, and below it the residuals
@@ -131,9 +162,31 @@ def cA_model(times, kf, kr):
 # choose it?
 
 # %%
+t_plot = np.linspace(0, 100, 200)
+cA_fit = cA_model(t_plot, *popt)
+cA_fit_points = cA_model(times, *popt)
+residuals = cA_data[298.15] - cA_fit_points
+
+plt.plot(times, cA_data[298.15], 'o', label='data')
+plt.plot(t_plot, cA_fit, '-', label='fit')
+plt.xlabel('Time (s)')
+plt.ylabel('$C_A$ (mol/L)')
+plt.legend()
+plt.show()
+
+plt.plot(times, residuals, 'o', label='residuals')
+plt.axhline(0, color='k', linestyle='--')
+plt.xlabel('Time (s)')
+plt.ylabel('Residuals (mol/L)')
+plt.legend()
+plt.show()
 
 # %% [markdown]
-# *Answer:*
+# *Answer: At 298.15 K, the fitted rate constants are $k_f = 0.0168 \pm 0.0008\text{ s}^{-1}$ and $k_r = 0.0200 \pm 0.0015\text{ s}^{-1}$. Each $\pm$ denotes one standard error ($1\sigma$) taken from the square root of the diagonal elements of pcov. 
+#
+# Without p0, curve_fit defaulted to [1.0, 1.0]. Rate constants of $1\text{ s}^{-1}$ give a relaxation time $\tau \approx 0.5\text{ s}$, meaning the simulated reaction reached equilibrium well before our first measurement at 10 s. Over the entire 10–100 s window, the predicted curve was completely flat. Because the gradient with respect to reaction rate vanished, the optimizer could not determine which way to step and became trapped in a flat minimum, only shifting the plateau to the average concentration.
+#
+# To find a justified starting guess, we used the data's plateau and timescale. Concentration levels off near $5.6\text{ mol/L}$, so $C_{A,\text{eq}}/C_{A,0} = k_r / (k_f + k_r) \approx 5.6/10 = 0.56$. It reaches the halfway point ($7.8\text{ mol/L}$) by $t_{1/2} \approx 20\text{ s}$. This gives $k_f + k_r \approx \ln(2)/20 \approx 0.035\text{ s}^{-1}$, yielding $k_r \approx 0.020\text{ s}^{-1}$ and $k_f \approx 0.015\text{ s}^{-1}$ for p0.*
 
 # %% [markdown]
 # ## 2. Three temperatures, in two steps
