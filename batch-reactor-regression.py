@@ -198,6 +198,30 @@ plt.show()
 # or exothermic? How can you tell?
 
 # %%
+results = []
+T_vals = np.array(list(cA_data.keys()))
+kf_vals = []
+kr_vals = []
+K_vals = []
+
+print(f"{'T (K)':<10}{'kf (1/s)':<22}{'kr (1/s)':<22}{'K = kf/kr':<12}")
+print("-" * 66)
+
+for T in T_vals:
+    popt, pcov = scipy.optimize.curve_fit(cA_model, times, cA_data[T], p0=[0.02, 0.02])
+    perr_T = np.sqrt(np.diag(pcov))
+
+    kf, kr = popt
+    K = kf / kr
+    
+    kf_vals.append(kf)
+    kr_vals.append(kr)
+    K_vals.append(K)
+
+    print(f"{T:<10.2f}{kf:.5f} ± {perr_T[0]:.5f}    {kr:.5f} ± {perr_T[1]:.5f}    {K:.4f}")
+
+# %% [markdown]
+# The reaction is endothermic. As the temperature increases from 298.15 K to 323.15 K, the equilibrium constant $K = k_f / k_r$ increases from 0.8377 to 1.2196. When raising the temperature causes $K$ to increase, the forward reaction is favored to absorb the added heat. Therefore, heat is absorbed, so $\Delta H > 0$.
 
 # %% [markdown]
 # **(b) Arrhenius.** As in Lecture 13: `scipy.stats.linregress` on $\ln k_f$ against
@@ -211,6 +235,42 @@ plt.show()
 # $\Delta H$ agree with what you said in (a)?
 
 # %%
+R = 8.314  # J/mol/K
+
+inverse_T = 1 / T_vals
+ln_kf = np.log(kf_vals)
+
+result_arrhenius = scipy.stats.linregress(inverse_T, ln_kf)
+
+slope = result_arrhenius.slope
+slope_err = result_arrhenius.stderr
+intercept = result_arrhenius.intercept
+intercept_err = result_arrhenius.intercept_stderr
+
+Ea = -slope * R / 1000
+Ea_err = slope_err * R / 1000
+
+log10_A = intercept / np.log(10)
+log10_A_err = intercept_err / np.log(10)
+
+print(f"Ea       = {Ea:.2f} ± {Ea_err:.2f} kJ/mol")
+print(f"log10(A) = {log10_A:.2f} ± {log10_A_err:.2f}")
+print(f"R^2      = {result_arrhenius.rvalue**2:.4f}")
+
+# %%
+ln_K = np.log(K_vals)
+
+result_vant_hoff = scipy.stats.linregress(inverse_T, ln_K)
+
+dH = -result_vant_hoff.slope * R / 1000
+dH_err = result_vant_hoff.stderr * R / 1000
+
+dS = result_vant_hoff.intercept * R
+dS_err = result_vant_hoff.intercept_stderr * R
+
+print(f"dH  = {dH:.2f} ± {dH_err:.2f} kJ/mol")
+print(f"dS  = {dS:.2f} ± {dS_err:.2f} J/(mol K)")
+print(f"R^2 = {result_vant_hoff.rvalue**2:.4f}")
 
 # %% [markdown]
 # **(d)** `linregress` gave you a ± on each of these. What does that ± know about,
@@ -218,7 +278,7 @@ plt.show()
 # the ± you got in (a).
 
 # %% [markdown]
-# *Answer:*
+# *Answer: The error bars reported by linregress come entirely from the vertical scatter of the three fitted points around the best-fit line. SciPy estimates the noise variance purely from the residuals of this line and projects it onto the slope and intercept standard errors. What they leave out is the uncertainty of each individual point. The rate constants $k_f$, $k_r$, and $K$ determined from the reactor data in step 2(a) each had their own standard errors and correlations from pcov. Ordinary linear regression ignores these known individual error bars completely, treating all three points as equally and infinitely certain measurements.*
 
 # %% [markdown]
 # ## 3. All the data at once
