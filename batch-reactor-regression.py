@@ -426,9 +426,31 @@ for i, name in enumerate(para_names):
 #   What would that tell you about your model, or about the experiment?
 
 # %%
+cA_pred_all = cA_model_all((T_all, t_all), *popt_all)
+residuals_all = cA_all - cA_pred_all
+
+N = len(cA_all)
+p = len(popt_all)
+degrees_of_freedom = N - p
+s_n = np.sqrt(np.sum(residuals_all**2) / degrees_of_freedom)
+
+print(f"Degrees of freedom: {degrees_of_freedom}")
+print(f"Estimated noise   : {s_n:.4f} mol/L")
+
+for T_val in np.unique(T_all):
+    mask = (T_all == T_val)
+    plt.plot(t_all[mask], residuals_all[mask], 'o', label=f'{T_val} K')
+
+plt.axhline(0, color='k', linestyle='--')
+plt.xlabel('Time (s)')
+plt.ylabel('Residuals (mol/L)')
+plt.legend()
+plt.show()
 
 # %% [markdown]
-# *Answer:*
+# *Answer: The estimated experimental noise across all 30 points is $s = 0.0886\text{ mol/L}$ with 26 degrees of freedom. The residual plot shows random scatter centered around zero with no apparent systematic drift or curvature over time, confirming that the first-order reversible kinetic model captures the reaction behavior well across all three temperatures.
+#
+# However, this result does not support the experimentalist's claimed measurement precision of $\pm 0.01\text{ mol/L}$. Our estimated noise $s \approx 0.09\text{ mol/L}$ is nearly nine times larger than the claimed error. The measurements have noticeably more random scatter than expected from an instrument with $\pm 0.01\text{ mol/L}$ precision.*
 
 # %% [markdown]
 # ## 5. Your project
