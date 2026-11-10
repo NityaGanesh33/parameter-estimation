@@ -299,7 +299,6 @@ cA_all = np.concatenate([cA_data[T] for T in temperatures])
 x_all = (T_all, t_all)
 print(T_all[:12], t_all[:12], cA_all[:12], sep='\n')
 
-
 # %% [markdown]
 # **(a)** Write `cA_model_all(x, log10A, Ea, dH, dS)`. Unpack `x` into temperatures and
 # times. For each temperature, work out $k_f$, $K$ and $k_r$, then call your `cA_model` for
@@ -316,9 +315,48 @@ print(T_all[:12], t_all[:12], cA_all[:12], sep='\n')
 # their ±.
 
 # %%
+T_list = []
+t_list = []
+cA_list = []
+
+for T, cA_vals in cA_data.items():
+    for t_val, cA_val in zip(times, cA_vals):
+        T_list.append(T)
+        t_list.append(t_val)
+        cA_list.append(cA_val)
+
+T_all = np.array(T_list)
+t_all = np.array(t_list)
+cA_all = np.array(cA_list)
+
 def cA_model_all(x, log10A, Ea, dH, dS):
     """C_A (mol/L) for every (T, t) pair in x. Ea and dH in kJ/mol, dS in J/mol/K."""
     T_col, t_col = x
+    cA_pred = np.zeros_like(T_col, dtype=float)
+
+    A = 10**log10A
+    Ea_J = Ea * 1000
+    dH_J = dH * 1000
+
+    for T_val in np.unique(T_col):
+        kf = A * np.exp(-Ea_J / (R * T_val))
+        dG = dH_J - T_val * dS
+        K = np.exp(-dG / (R * T_val))
+        kr = kf / K
+
+        mask = (T_col == T_val)
+        cA_pred[mask] = cA_model(t_col[mask], kf, kr)
+
+    return cA_pred
+
+p0_sim = [log10_A, Ea, dH, dS]
+
+popt_all, pcov_all = scipy.optimize.curve_fit(cA_model_all, (T_all, t_all), cA_all, p0=p0_sim)
+perr_all = np.sqrt(np.diag(pcov_all))
+
+para_names = ['log10(A)', 'Ea (kJ/mol)', 'dH (kJ/mol)', 'dS (J/(mol K)']
+for name, val, err in zip(para_names, popt_all, perr_all):
+    print(f"{name:<15} = {val:.2f} ± {err:.2f}")
     
 
 
@@ -329,6 +367,16 @@ def cA_model_all(x, log10A, Ea, dH, dS):
 # Does it find the same answer? How far did the data move you from what you expected?
 
 # %%
+p0_test = [6.0, 45.0, -10.0, -50.0]
+
+popt_test, pcov_test = scipy.optimize.curve_fit(cA_model_all, (T_all, t_all), cA_all, p0=p0_test)
+for name, val in zip(para_names, popt_test):
+    print(f"{name:<15} = {val:.2f}")
+
+# %% [markdown]
+# No, the optimizer does not find the same answer. Starting from [6, 45, -10, -50] caused curve_fit to run for over 40 seconds and get trapped in an unphysical local minimum with $\log_{10}(A) \approx 37.19$ and $E_a \approx 222.14\text{ kJ/mol}$. 
+#
+# The real data moved our estimates significantly away from the prior expectations. Most critically, the thermodynamics flipped from exothermic ($\Delta H = -10\text{ kJ/mol}$) to endothermic ($\Delta H \approx +11.53\text{ kJ/mol}$), and the reaction entropy increased from $-50$ to $+37.33\text{ J/(mol}\cdot\text{K)}$. The activation energy also shifted higher from $45\text{ kJ/mol}$ to $64.28\text{ kJ/mol}$, with $\log_{10}(A)$ moving from $6.0$ to $9.48$
 
 # %% [markdown]
 # **(c)** Compare with task 2. Are the centres the same? Are the error bars? Which set of
@@ -341,9 +389,25 @@ def cA_model_all(x, log10A, Ea, dH, dS):
 # If someone quotes only your four ± values, what are they missing?
 
 # %%
+correlation_matrix = pcov_all / np.outer(perr_all, perr_all)
+
+print(f"{'':>15}" + "".join([f"{name:>15}" for name in para_names]))
+print("-" * 75)
+for i, name in enumerate(para_names):
+    row_str = f"{name:>15}" + "".join([f"{correlation_matrix[i, j]:>15.4f}" for j in range(4)])
+    print(row_str)
 
 # %% [markdown]
-# *Answer:*
+# *Answer:
+# (c) The parameter values between the two methods agree very closely. The activation energy $E_a$ is $62.77\text{ kJ/mol}$ in the two-step fit versus $64.28\text{ kJ/mol}$ in the simultaneous fit, and the enthalpy $\Delta H$ is $11.97\text{ kJ/mol}$ versus $11.53\text{ kJ/mol}$.
+#
+# The simultaneous fit reports larger, more realistic error bars—for example, the uncertainty on $E_a$ widened from $\pm 0.95$ to $\pm 2.14\text{ kJ/mol}$. In Task 2, linregress fit three isolated summary points, ignoring the individual measurement errors on $k_f$ and $K$ and artificially shrinking the reported standard errors. The simultaneous fit regresses the actual 30 concentration data points directly through the integrated ODE, properly propagating all experimental noise across the shared parameters.
+#
+# (d) The correlation matrix shows that $\log_{10}(A)$ and $E_a$ have a correlation of $0.9997$, and $\Delta H$ and $\Delta S$ have a correlation of $0.9996$.
+#
+# This happens because over a narrow temperature range ($298.15\text{ to }323.15\text{ K}$), the parameters compensate for each other. In the Arrhenius equation $\ln k = \ln A - E_a / (RT)$, increasing $E_a$ slows the reaction down, but increasing $\ln A$ speeds it right back up. The same balance happens in thermodynamics with $\Delta G = \Delta H - T\Delta S$.
+#
+# Because they can cancel each other out, the optimizer sees a long, narrow diagonal valley instead of a single round point. Reporting isolated $\pm$ error bars leaves this out: you cannot change one parameter without also sliding its partner along that ridge.*
 
 # %% [markdown]
 # ## 4. Look at the residuals
